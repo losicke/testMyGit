@@ -1,0 +1,388 @@
+搭建部署ELK集群下载链接：     https://www.elastic.co/cn/downloads/past-releases
+统一操作系统：centos7.5-1804
+elasticsearch * 3
+#kibana * 1
+#logstash * 1
+#注意：es、kibana、logstash版本保持同步
+1   配置hosts,关闭防火墙略 6.X和7.X版本
+2   部署java环境
+
+    vim /etc/profile 
+        JAVA_HOME=/usr/lib/jvm/java-1.8.0-openjdk
+        JRE_HOME=$JAVA_HOME/jre
+        CLASS_PATH=.:$JAVA_HOME/lib/dt.jar:$JAVA_HOME/lib/tools.jar:$JRE_HOME/lib
+        PATH=$PATH:$JAVA_HOME/bin:$JRE_HOME/bin
+    source /etc/profile 
+
+
+3   添加用户elastsicsearch
+    useradd elasticsearch
+
+    #echo $5A9vQk5NILE | passwd --stdin elasticsearch
+    passwd elasticsearch
+
+    普通用户要增加权限
+    echo "elasticsearch ALL = (root) NOPASSWD:ALL" | tee /etc/sudoers.d/elasticsearch
+4   编辑配置文件
+
+    vim /etc/sysctl.conf
+    vm.max_map_count = 655360
+
+    sysctl -p
+    加大用户资源占用上限
+
+    vim /etc/security/limits.conf
+    elasticsearch soft nofile 65536
+    elasticsearch hard nofile 131072
+    elasticsearch soft nproc 4096
+    elasticsearch hard nproc 4096
+    vim /etc/security/limits.d/20-nproc.conf
+    * soft nproc 4096
+    root soft nproc unlimited
+5   创建es数据目录及日志目录并授权
+
+    mkdir -p /data/components/elasticsearch
+    mkdir -p /data/components/elasticsearch/plugins
+    mkdir -p /data/logs/
+
+    chown -R elasticsearch.elasticsearch /data
+    #将es的tar包授权给elasticsearch，由elasticsearch解压
+    chown elasticsearch.elasticsearch /usr/local/soft/elasticsearch-6.2.4.tar.gz
+    切换到elasticsearch
+
+    su - elasticsearch
+
+6   解压并更改配置文件
+    tar -xvf elasticsearch-6.2.4.tar.gz -C /data/
+
+    cd /data/elasticsearch-6.2.4/
+    更改配置文件
+
+es6.2.4：
+    vim config/elasticsearch.yml
+
+    cluster.name: test_es 保持多节点统一
+    node.name: es1
+    path.data: /data/components/elasticsearch
+    path.logs: /data/logs/
+    network.host: 10.252.3.30
+    http.port: 9200
+    discovery.zen.ping.unicast.hosts: ["es1", "es2","es3"]
+    http.cors.enabled: true     #elasticsearch-head连接配置
+    http.cors.allow-origin: "*"
+
+
+es7.4.2：(3node)
+    vim config/elasticsearch.yml
+
+    cluster.name: TEST_ES
+    node.name: es1
+    path.data: /data/components/elasticsearch
+    path.logs: /data/logs/
+    network.host: 0.0.0.0
+    http.port: 9200
+    discovery.seed_hosts: ["es1", "es2", "es3"]
+    cluster.initial_master_nodes: ["es1", "es2", "es3"]
+    http.cors.enabled: true
+    http.cors.allow-origin: "*"
+
+#限制jvm的内存使用，一定不要超过实例可用内存的一半或32G
+    vim /data/elasticsearch-6.2.4/config/jvm.options
+    -Xms8g
+    -Xmx8g
+
+
+    启动es
+    bin/elasticsearch -d
+
+*****************************************************************************
+*****************************************************************************
+*****************************************************************************
+*****************************************************************************
+*****************************************************************************
+*****************************************************************************
+
+
+
+
+Kibana搭建
+https://artifacts.elastic.co/downloads/kibana/kibana-6.2.4-linux-x86_64.tar.gz
+解压并更改配置文件
+
+vim config/kibana.yml
+server.host: "10.252.3.59"
+elasticsearch.url: "http://10.252.3.20:9200"kibana汉化
+汉化包：https://github.com/anbai-inc/Kibana_Hanization
+python main.py /usr/local/soft/kibana/
+汉化完成
+后台启动： nuhup ./bin/kibana &下载插件
+elasticsearch-head 方便查看集群
+下载nodejs：https://nodejs.org/en/download/
+格式为tar.xz , linux需下载xz包，直接yum下载
+
+解压nodejs包
+tar -xvf node-v10.16.2-linux-x64.tar.xz
+cd node-v10.16.2-linux-x64
+
+写入环境变量
+vim /etc/profile
+export NODE_HOME=/usr/local/soft/node-v10.16.2-linux-x64
+export PATH=$PATH:$NODE_HOME/bin
+export NODE_PATH=$NODE_HOME/lib/node_modules
+
+source /etc/profile
+
+测试
+npm -v 有版本输出正常
+
+下载elasticsearch-head包
+
+git clone https://github.com/mobz/elasticsearch-head
+
+把包解压到es主目录下并更改属主为elasticsearch
+su - elasticsearch
+cd /data/elasticsearch-6.2.4/elasticsearch-head/
+npm install
+npm run start
+
+npm install 报错解决：
+
+Please report this full log at https://github.com/Medium/phantomjs
+
+npm ERR! Darwin 15.0.0
+
+npm ERR! argv "/usr/local/bin/node" "/usr/local/bin/npm" "install"
+
+npm ERR! node v4.4.3
+
+npm ERR! npm v3.10.9
+
+npm ERR! code ELIFECYCLE
+
+npm ERR! phantomjs-prebuilt@2.1.14 install: `node install.js`
+
+npm ERR! Exit status 1
+
+npm ERR!
+
+npm ERR! Failed at the phantomjs-prebuilt@2.1.14 install script 'node install.js
+
+解决办法：
+这是依赖包没有成功安装
+执行：npm install phantomjs-prebuilt@2.1.14 --ignore-scripts
+依此办法，还有未成功的就npm手动安装，直到成功为止
+
+最后
+npm run start
+这是安装成功显示
+
+访问本机ip+9100安装logstash
+版本：logstash-6.2.4.tar.gz
+安装java环境
+注意：我使用logstash来收集各种网络设备的日志，包括交换机和防火墙
+
+直接解压
+tar -xvf logstash-6.2.4.tar.gz
+
+logstash.yml不用管
+根据需求编辑新的配置文件
+我需要收集交换机以及防火墙的日志，所以我的配置如下
+详情访问：https://www.opscaff.com/2018/05/08/elk-%E4%BA%A4%E6%8D%A2%E6%9C%BA%E6%97%A5%E5%BF%97%E5%88%86%E6%9E%90/
+
+配置交换机配置文件
+vim config/logstash.conf
+
+input{
+udp {port =>
+5002 type =>
+"private_cloud_switch"}
+udp {port =>
+5003 type =>
+"ppp_cloud_switch"}
+udp {port =>
+5004 type =>
+"private_cloud_firewalld"}
+}
+filter {
+if [type] ==
+"private_cloud_switch"{
+grok{
+match => { "message"
+=>
+"<%{BASE10NUM:syslog_pri}>%{NUMBER:log_sequence}: .%{SYSLOGTIMESTAMP:timestamp}: %%{DATA:facility}-%{POSINT:severity}-%{CISCO_REASON:mnemonic}: %{GREEDYDATA:message}" }
+match => { "message"
+=>
+"<%{BASE10NUM:syslog_pri}>%{NUMBER:log_sequence}: %{SYSLOGTIMESTAMP:timestamp}: %%{DATA:facility}-%{POSINT:severity}-%{CISCO_REASON:mnemonic}: %{GREEDYDATA:message}" }
+add_field => {"severity_code"
+=>
+"%{severity}"}
+overwrite => ["message"]
+}
+}
+else
+if [type] ==
+"ppp_cloud_switch"{
+grok {
+match => { "message"
+=>
+"<%{BASE10NUM:syslog_pri}>%{SYSLOGTIMESTAMP:timestamp} %{YEAR:year} %{DATA:hostname} %%%{DATA:vvmodule}/%{POSINT:severity}/%{DATA:digest}: %{GREEDYDATA:message}" }
+remove_field => [ "year" ]
+add_field => {"severity_code"
+=>
+"<%{BASE10NUM:syslog_pri}>%{SYSLOGTIMESTAMP:timestamp} %{YEAR:year} %{DATA:hostname} %%%{DATA:vvmodule}/%{POSINT:severity}/%{DATA:digest}: %{GREEDYDATA:message}" }
+remove_field => [ "year" ]
+add_field => {"severity_code"
+=>
+"%{severity}"}
+overwrite => ["message"]
+}
+}
+else
+if [type] ==
+"private_cloud_firewalld"{
+grok {
+match => { "message"
+=>
+"<%{BASE10NUM:syslog_pri}>%{SYSLOGTIMESTAMP:timestamp} %{YEAR:year} %{DATA:hostname} %%%{DATA:vvmodule}/%{POSINT:severity}/%{DATA:digest}: %{GREEDYDATA:message}" }
+remove_field => [ "year" ]
+add_field => {"severity_code"
+=>
+"%{severity}"}
+overwrite => ["message"]
+}
+}
+
+
+mutate {
+gsub => [
+"severity", "0", "Emergency",
+"severity", "1", "Alert",
+"severity", "2", "Critical",
+"severity", "3", "Error",
+"severity", "4", "Warning",
+"severity", "5", "Notice",
+"severity", "6", "Informational",
+"severity", "7", "Debug"
+
+]
+}
+}
+output{
+if [type] == "private_cloud_switch"{
+elasticsearch {
+index =>
+"private_cloud_switch-%{+YYYY.MM.dd}"
+
+hosts => ["10.252.3.20:9200"]
+}
+}
+if [type] == "ppp_cloud_switch"{
+elasticsearch {
+index =>
+"ppp_cloud_switch-%{+YYYY.MM.dd}"
+
+hosts => ["10.252.3.20:9200"]
+}
+}
+if [type] == "private_cloud_firewalld"{
+elasticsearch {
+index =>
+"private_cloud_firewalld-%{+YYYY.MM.dd}"
+
+hosts => ["10.252.3.20:9200"]
+}
+}
+}
+配置防火墙可以自定义段，使用split截取message中的某一字段
+filter{
+mutate{
+split => ["message","|"]
+add_field => {
+"tmp" => "%{[message][0]}"
+}
+add_field => {
+"DeviceProduct" => "%{[message][2]}"
+}
+add_field => {
+"DeviceVersion" => "%{[message][3]}"
+}
+add_field => {
+"Signature ID" => "%{[message][4]}"
+}
+add_field => {
+"Name" => "%{[message][5]}"
+}
+}
+
+es运维操作
+
+es集群会为每个index创建5个分片，每个分片会有多个副本（我是两台es，默认就是2副本）
+删除指定index
+curl -XDELETE  http://localhost:9200/acc-apply-2018.08.09
+
+模糊匹配删除index
+curl -XDELETE  http://localhost:9200/acc-apply-*
+
+使用通配符,删除所有的索引
+curl -XDELETE http://localhost:9200/_all
+
+获取当前索引
+curl  'localhost:9200/_cat/indices?v'
+
+集群是否健康
+curl 'IP:9200/_cat/health?v'
+
+查看节点列表
+curl 'IP:9200/_cat/nodes?v'
+
+创建简单索引
+curl -XPUT IP:9200/索引名称
+
+分片设置
+number_of_shards  分片数
+number_of_replicas    主分片的副本数
+
+PUT IP:9200/索引名称
+{
+    "settings": {
+    "number_of_shards" :   1,
+    "number_of_replicas" : 0
+    }
+}
+
+集群健康状态：
+green    健康
+yellow    主分片全部可用，副本分片不一定，警告
+red    主分片不可用
+
+集群es分片恢复（自动）
+curl -XPOST http://10.252.3.20:9200/_cluster/reroute?retry_failed
+
+手动
+   curl -H 'Content-Type: application/json' -XPOST '10.252.3.20:9200/_cluster/reroute?pretty' -H 'Content-Type: application/json' -d'
+{
+"commands" : [
+{
+"allocate_stale_primary" : {
+"index" : "ppp_cloud_switch-2019.09.03", "shard" : 0,
+"node" : "WnVHzEsVTU2wtVsYNkY6AA",
+"accept_data_loss" : true
+}
+}
+]
+}
+'
+
+分片不可用时状态为UNASSIGNED，查看UNASSIGNED的分片
+curl -s "http://10.252.3.20:9200/_cat/shards" | grep UNASSIGNED
+
+恢复UNASSIGNED的分片
+curl -H "Content-Type: application/json" -XPOST '10.252.3.20:9200/_cluster/reroute?retry_failed=true' -d '{"commands" : [ {"allocate_replica" : {"index" : "office_firewalld-2020.04.16","shard" : 0,"node" : "WnVHzEsVTU2wtVsYNkY6AA"  }}] }
+
+
+查询单个index所有信息
+curl -X GET "127.0.0.1:9200/xn-openstack-2020.07.27/_search?pretty"
+
+
+指定index名为xn开头的索引分片数为3，副本数为2
+curl -XPUT 'http://127.0.0.1:9200/_template/template_http_request_record' -H 'Content-Type: application/json' -d '{"index_patterns": ["xn-*"],"settings": {"number_of_shards": 3,"number_of_replicas": 2}}'
